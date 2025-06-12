@@ -17,9 +17,6 @@ type Config struct {
 
 	// Queue configuration
 	Queue QueueConfig `mapstructure:"queue"`
-
-	// Logging configuration
-	Logging LoggingConfig `mapstructure:"logging"`
 }
 
 // TransportConfig contains HTTP transport settings
@@ -63,12 +60,6 @@ type QueueConfig struct {
 	BatchTimeout time.Duration `mapstructure:"batch_timeout"`
 }
 
-// LoggingConfig contains logging settings
-type LoggingConfig struct {
-	// Log level for plugin operations
-	Level string `mapstructure:"level"`
-}
-
 // InitDefaults initializes default configuration values
 func (cfg *Config) InitDefaults() {
 	if cfg.Transport.Timeout == 0 {
@@ -101,17 +92,13 @@ func (cfg *Config) InitDefaults() {
 		cfg.Queue.BufferSize = 1000
 	}
 	if cfg.Queue.Workers == 0 {
-		cfg.Queue.Workers = 4
+		cfg.Queue.Workers = 1
 	}
 	if cfg.Queue.BatchSize == 0 {
 		cfg.Queue.BatchSize = 10
 	}
 	if cfg.Queue.BatchTimeout == 0 {
 		cfg.Queue.BatchTimeout = 5 * time.Second
-	}
-
-	if cfg.Logging.Level == "" {
-		cfg.Logging.Level = "info"
 	}
 }
 
