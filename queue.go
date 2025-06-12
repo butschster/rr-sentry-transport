@@ -56,10 +56,6 @@ func (eq *EventQueue) Start(ctx context.Context, processor EventProcessor) error
 	eq.wg.Add(1)
 	go eq.retryScheduler(retryCtx)
 
-	eq.logger.Info("Event queue started",
-		zap.Int("workers", eq.config.Workers),
-		zap.Int("buffer_size", eq.config.BufferSize))
-
 	return nil
 }
 
@@ -91,7 +87,7 @@ func (eq *EventQueue) Stop(ctx context.Context) error {
 
 	select {
 	case <-done:
-		eq.logger.Info("Event queue stopped gracefully")
+		eq.logger.Debug("Event queue stopped gracefully")
 	case <-ctx.Done():
 		eq.logger.Warn("Event queue stopped with timeout")
 	}
@@ -148,7 +144,6 @@ func (eq *EventQueue) worker(ctx context.Context, workerID int, processor EventP
 	defer eq.wg.Done()
 
 	logger := eq.logger.With(zap.Int("worker_id", workerID))
-	logger.Info("Worker started")
 
 	batch := make([]*QueuedEvent, 0, eq.config.BatchSize)
 	batchTimer := time.NewTimer(eq.config.BatchTimeout)
@@ -157,7 +152,6 @@ func (eq *EventQueue) worker(ctx context.Context, workerID int, processor EventP
 	for {
 		select {
 		case <-ctx.Done():
-			logger.Info("Worker stopping")
 			// Process remaining batch
 			if len(batch) > 0 {
 				eq.processBatch(logger, processor, batch)
@@ -166,7 +160,6 @@ func (eq *EventQueue) worker(ctx context.Context, workerID int, processor EventP
 
 		case event, ok := <-eq.events:
 			if !ok {
-				logger.Info("Events channel closed")
 				// Process remaining batch
 				if len(batch) > 0 {
 					eq.processBatch(logger, processor, batch)
@@ -206,12 +199,10 @@ func (eq *EventQueue) retryScheduler(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
-			eq.logger.Info("Retry scheduler stopping")
 			return
 
 		case event, ok := <-eq.retryEvents:
 			if !ok {
-				eq.logger.Info("Retry events channel closed")
 				return
 			}
 			pendingRetries = append(pendingRetries, event)

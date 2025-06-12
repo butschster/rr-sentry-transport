@@ -4,13 +4,8 @@ import (
 	"time"
 )
 
-const PluginName = "sentry_transport"
-
 // Config represents the plugin configuration
 type Config struct {
-	// Enable/disable the plugin
-	Enabled bool `mapstructure:"enabled"`
-
 	// Sentry DSN
 	DSN string `mapstructure:"dsn"`
 

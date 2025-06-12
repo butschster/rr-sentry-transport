@@ -42,7 +42,7 @@ func (rm *RetryManager) ShouldRetry(event *QueuedEvent, err error) bool {
 		if rm.config.DeadLetterQueue && rm.deadLetter != nil {
 			select {
 			case rm.deadLetter <- event:
-				rm.logger.Info("Event moved to dead letter queue",
+				rm.logger.Debug("Event moved to dead letter queue",
 					zap.String("event_id", event.Event.ID))
 			default:
 				rm.logger.Warn("Dead letter queue is full, dropping event",
@@ -87,7 +87,7 @@ func (rm *RetryManager) ScheduleRetry(event *QueuedEvent, err error) {
 	backoff := rm.CalculateBackoff(event.Attempts)
 	event.NextRetry = event.LastAttempt.Add(backoff)
 
-	rm.logger.Info("Scheduling event retry",
+	rm.logger.Debug("Scheduling event retry",
 		zap.String("event_id", event.Event.ID),
 		zap.Int("attempt", event.Attempts),
 		zap.Duration("backoff", backoff),

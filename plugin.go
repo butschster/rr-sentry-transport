@@ -56,11 +56,6 @@ func (p *Plugin) Init(cfg Configurer, log Logger) error {
 		return errors.E(op, err)
 	}
 
-	// Check if plugin is enabled
-	if !config.Enabled {
-		return errors.E(op, errors.Disabled)
-	}
-
 	// Store configuration
 	p.config = config
 
@@ -89,11 +84,7 @@ func (p *Plugin) Init(cfg Configurer, log Logger) error {
 	p.stopCh = make(chan struct{})
 	p.doneCh = make(chan struct{})
 
-	p.logger.Info("Sentry transport plugin initialized", 
-		zap.Bool("enabled", config.Enabled),
-		zap.Bool("dsn_configured", config.DSN != ""),
-		zap.Int("queue_buffer_size", config.Queue.BufferSize),
-		zap.Int("workers", config.Queue.Workers))
+	p.logger.Debug("Sentry transport plugin initialized")
 
 	return nil
 }
@@ -130,14 +121,14 @@ func (p *Plugin) Serve() chan error {
 		// Start cleanup routine
 		go p.cleanupRoutine(ctx)
 
-		p.logger.Info("Sentry transport plugin started")
+		p.logger.Debug("Sentry transport plugin started")
 
 		// Wait for stop signal
 		select {
 		case <-p.stopCh:
-			p.logger.Info("Sentry transport plugin stopping")
+			p.logger.Debug("Sentry transport plugin stopping")
 		case <-ctx.Done():
-			p.logger.Info("Sentry transport plugin context cancelled")
+			p.logger.Debug("Sentry transport plugin context cancelled")
 		}
 
 		// Stop components
@@ -155,7 +146,7 @@ func (p *Plugin) Serve() chan error {
 			p.retryMgr.Close()
 		}
 
-		p.logger.Info("Sentry transport plugin stopped")
+		p.logger.Debug("Sentry transport plugin stopped")
 	}()
 
 	return errCh
@@ -194,11 +185,6 @@ func (p *Plugin) Provides() []*dep.Out {
 	}
 }
 
-// IsEnabled returns true if the plugin is enabled and configured
-func (p *Plugin) IsEnabled() bool {
-	return p.config != nil && p.config.Enabled
-}
-
 // Transport returns the transport interface
 func (p *Plugin) Transport() SentryTransporter {
 	return p
@@ -228,14 +214,6 @@ func (p *Plugin) SendBatch(events []*SentryEvent) error {
 	return nil
 }
 
-// GetMetrics implements SentryTransporter interface
-func (p *Plugin) GetMetrics() *TransportMetrics {
-	if p.queue == nil {
-		return &TransportMetrics{}
-	}
-
-	return p.queue.GetMetrics()
-}
 
 // cleanupRoutine performs periodic cleanup tasks
 func (p *Plugin) cleanupRoutine(ctx context.Context) {
@@ -259,7 +237,6 @@ func (p *Plugin) cleanupRoutine(ctx context.Context) {
 type SentryTransporter interface {
 	SendEvent(event *SentryEvent) error
 	SendBatch(events []*SentryEvent) error
-	GetMetrics() *TransportMetrics
 }
 
 // NoOpProcessor is a no-op event processor for when no transport is configured
@@ -269,7 +246,7 @@ type NoOpProcessor struct {
 
 // ProcessEvent implements EventProcessor interface
 func (n *NoOpProcessor) ProcessEvent(event *QueuedEvent) *SendResult {
-	n.logger.Info("Dry-run: would send event",
+	n.logger.Debug("Dry-run: would send event",
 		zap.String("event_id", event.Event.ID),
 		zap.String("type", event.Event.Type),
 		zap.Int("payload_size", len(event.Event.Payload)))
