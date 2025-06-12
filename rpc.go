@@ -34,6 +34,9 @@ func (r *RPC) SendBatch(events []*SentryEvent, result *[]*SendResult) error {
 
 	// Enqueue each event
 	for i, event := range events {
+		// Record event by type metric
+		r.plugin.metrics.IncEventsByType(event.Type)
+		
 		// Enqueue for processing
 		if err := r.plugin.queue.Enqueue(event); err != nil {
 			results[i] = &SendResult{
@@ -70,6 +73,9 @@ func (r *RPC) SendEvent(event *SentryEvent, result *SendResult) error {
 		zap.String("event_id", event.ID),
 		zap.String("type", event.Type))
 
+	// Record event by type metric
+	r.plugin.metrics.IncEventsByType(event.Type)
+
 	// Enqueue for processing
 	if err := r.plugin.queue.Enqueue(event); err != nil {
 		*result = SendResult{
@@ -89,5 +95,29 @@ func (r *RPC) SendEvent(event *SentryEvent, result *SendResult) error {
 		EventID: event.ID,
 	}
 
+	return nil
+}
+
+// GetStatus returns plugin status including metrics
+func (r *RPC) GetStatus(empty bool, result *map[string]interface{}) error {
+	status := make(map[string]interface{})
+	
+	// Queue status
+	if r.plugin.queue != nil {
+		status["queue"] = r.plugin.queue.GetStatus()
+	}
+	
+	// Retry manager status
+	if r.plugin.retryMgr != nil {
+		status["retry"] = r.plugin.retryMgr.GetRetryStats()
+	}
+	
+	// Rate limiter status
+	if r.plugin.transport != nil {
+		status["rate_limits"] = r.plugin.transport.GetRateLimiter().GetStatus()
+	}
+	
+	*result = status
+	
 	return nil
 }

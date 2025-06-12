@@ -12,14 +12,16 @@ import (
 type RetryManager struct {
 	config     *RetryConfig
 	logger     *zap.Logger
+	metrics    *metricsCollector
 	deadLetter chan *QueuedEvent
 }
 
 // NewRetryManager creates a new retry manager
-func NewRetryManager(config *RetryConfig, logger *zap.Logger) *RetryManager {
+func NewRetryManager(config *RetryConfig, logger *zap.Logger, metrics *metricsCollector) *RetryManager {
 	rm := &RetryManager{
-		config: config,
-		logger: logger,
+		config:  config,
+		logger:  logger,
+		metrics: metrics,
 	}
 
 	if config.DeadLetterQueue {
@@ -44,10 +46,20 @@ func (rm *RetryManager) ShouldRetry(event *QueuedEvent, err error) bool {
 			case rm.deadLetter <- event:
 				rm.logger.Debug("Event moved to dead letter queue",
 					zap.String("event_id", event.Event.ID))
+				
+				// Record dead letter queue metric
+				rm.metrics.IncDeadLetterEvents()
+				
 			default:
 				rm.logger.Warn("Dead letter queue is full, dropping event",
 					zap.String("event_id", event.Event.ID))
+				
+				// Record dropped event metric
+				rm.metrics.IncDroppedEvents()
 			}
+		} else {
+			// No dead letter queue, count as dropped
+			rm.metrics.IncDroppedEvents()
 		}
 
 		return false

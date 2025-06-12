@@ -23,10 +23,11 @@ type HTTPTransport struct {
 	logger      *zap.Logger
 	rateLimiter *RateLimiter
 	retryMgr    *RetryManager
+	metrics     *metricsCollector
 }
 
 // NewHTTPTransport creates a new HTTP transport
-func NewHTTPTransport(config *TransportConfig, dsnStr string, logger *zap.Logger) (*HTTPTransport, error) {
+func NewHTTPTransport(config *TransportConfig, dsnStr string, logger *zap.Logger, metrics *metricsCollector) (*HTTPTransport, error) {
 	dsn, err := ParseDSN(dsnStr)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse DSN: %w", err)
@@ -67,7 +68,7 @@ func NewHTTPTransport(config *TransportConfig, dsnStr string, logger *zap.Logger
 		client:      client,
 		logger:      logger,
 		rateLimiter: NewRateLimiter(logger),
-		retryMgr:    NewRetryManager(&RetryConfig{}, logger), // Will be set properly later
+		metrics:     metrics,
 	}, nil
 }
 
@@ -102,6 +103,7 @@ func (t *HTTPTransport) sendEvent(event *SentryEvent) *SendResult {
 		t.logger.Error("Failed to create request",
 			zap.String("event_id", event.ID),
 			zap.Error(err))
+		
 		return &SendResult{
 			Success: false,
 			EventID: event.ID,
@@ -115,6 +117,7 @@ func (t *HTTPTransport) sendEvent(event *SentryEvent) *SendResult {
 		t.logger.Error("HTTP request failed",
 			zap.String("event_id", event.ID),
 			zap.Error(err))
+		
 		return &SendResult{
 			Success: false,
 			EventID: event.ID,
@@ -150,6 +153,7 @@ func (t *HTTPTransport) sendEvent(event *SentryEvent) *SendResult {
 		t.logger.Debug("Event sent successfully",
 			zap.String("event_id", event.ID),
 			zap.Int("status_code", resp.StatusCode))
+		
 		return &SendResult{
 			Success: true,
 			EventID: event.ID,

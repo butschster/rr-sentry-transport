@@ -16,19 +16,19 @@ type EventQueue struct {
 	logger      *zap.Logger
 	workers     []context.CancelFunc
 	wg          sync.WaitGroup
-	metrics     *TransportMetrics
+	metrics     *metricsCollector
 	mu          sync.RWMutex
 	closed      bool
 }
 
 // NewEventQueue creates a new event queue
-func NewEventQueue(config *QueueConfig, logger *zap.Logger) *EventQueue {
+func NewEventQueue(config *QueueConfig, logger *zap.Logger, metrics *metricsCollector) *EventQueue {
 	return &EventQueue{
 		events:      make(chan *QueuedEvent, config.BufferSize),
 		retryEvents: make(chan *QueuedEvent, config.BufferSize/2),
 		config:      config,
 		logger:      logger,
-		metrics:     &TransportMetrics{},
+		metrics:     metrics,
 	}
 }
 
@@ -116,6 +116,10 @@ func (eq *EventQueue) Enqueue(event *SentryEvent) error {
 	default:
 		eq.logger.Warn("Event queue is full, dropping event",
 			zap.String("event_id", event.ID))
+		
+		// Record dropped event in metrics
+		eq.metrics.IncDroppedEvents()
+		
 		return ErrQueueFull
 	}
 }
@@ -135,6 +139,10 @@ func (eq *EventQueue) EnqueueRetry(event *QueuedEvent) error {
 	default:
 		eq.logger.Warn("Retry queue is full, dropping event",
 			zap.String("event_id", event.Event.ID))
+		
+		// Record dropped event in metrics
+		eq.metrics.IncDroppedEvents()
+		
 		return ErrQueueFull
 	}
 }
@@ -251,45 +259,21 @@ func (eq *EventQueue) processBatch(logger *zap.Logger, processor EventProcessor,
 
 	for _, event := range batch {
 		result := processor.ProcessEvent(event)
-		eq.updateMetrics(result)
-
-		if !result.Success {
-			logger.Error("Failed to process event",
+		
+		// Update metrics based on result
+		if result.Success {
+			eq.metrics.IncSuccessfulEvents()
+		} else if result.RateLimit {
+			// Rate limited events are not counted as failed
+			eq.logger.Debug("Event rate limited",
 				zap.String("event_id", event.Event.ID),
-				zap.String("error", result.Error),
-				zap.Bool("rate_limit", result.RateLimit))
+				zap.String("error", result.Error))
+		} else {
+			eq.metrics.IncFailedEvents()
+			eq.logger.Error("Failed to process event",
+				zap.String("event_id", event.Event.ID),
+				zap.String("error", result.Error))
 		}
-	}
-}
-
-// updateMetrics updates queue metrics
-func (eq *EventQueue) updateMetrics(result *SendResult) {
-	eq.mu.Lock()
-	defer eq.mu.Unlock()
-
-	if result.Success {
-		eq.metrics.EventsSent++
-	} else if result.RateLimit {
-		eq.metrics.EventsRateLimit++
-	} else {
-		eq.metrics.EventsFailed++
-	}
-
-	eq.metrics.QueueLength = len(eq.events)
-}
-
-// GetMetrics returns current queue metrics
-func (eq *EventQueue) GetMetrics() *TransportMetrics {
-	eq.mu.RLock()
-	defer eq.mu.RUnlock()
-
-	// Return a copy
-	return &TransportMetrics{
-		EventsSent:      eq.metrics.EventsSent,
-		EventsFailed:    eq.metrics.EventsFailed,
-		EventsRateLimit: eq.metrics.EventsRateLimit,
-		QueueLength:     len(eq.events),
-		TotalRetries:    eq.metrics.TotalRetries,
 	}
 }
 
@@ -303,7 +287,6 @@ func (eq *EventQueue) GetStatus() map[string]interface{} {
 		"retry_queue_length": len(eq.retryEvents),
 		"workers":            len(eq.workers),
 		"closed":             eq.closed,
-		"metrics":            eq.metrics,
 	}
 }
 

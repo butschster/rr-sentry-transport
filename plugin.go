@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/roadrunner-server/endure/v2/dep"
 	"github.com/roadrunner-server/errors"
 	"go.uber.org/zap"
@@ -18,6 +19,7 @@ type Plugin struct {
 	queue     *EventQueue
 	transport *HTTPTransport
 	retryMgr  *RetryManager
+	metrics   *metricsCollector
 	
 	// Lifecycle
 	stopCh chan struct{}
@@ -62,19 +64,22 @@ func (p *Plugin) Init(cfg Configurer, log Logger) error {
 	// Initialize logger
 	p.logger = log.NamedLogger(PluginName)
 
-	// Initialize event queue
-	p.queue = NewEventQueue(&config.Queue, p.logger)
+	// Initialize metrics collector
+	p.metrics = newMetricsCollector()
+
+	// Initialize event queue with metrics
+	p.queue = NewEventQueue(&config.Queue, p.logger, p.metrics)
 
 	// Initialize HTTP transport if DSN is provided
 	if config.DSN != "" {
-		transport, err := NewHTTPTransport(&config.Transport, config.DSN, p.logger)
+		transport, err := NewHTTPTransport(&config.Transport, config.DSN, p.logger, p.metrics)
 		if err != nil {
 			return errors.E(op, err)
 		}
 		p.transport = transport
 
-		// Initialize retry manager
-		p.retryMgr = NewRetryManager(&config.Retry, p.logger)
+		// Initialize retry manager with metrics
+		p.retryMgr = NewRetryManager(&config.Retry, p.logger, p.metrics)
 		transport.SetRetryManager(p.retryMgr)
 	} else {
 		p.logger.Warn("No DSN configured, events will be queued but not transmitted")
@@ -112,7 +117,7 @@ func (p *Plugin) Serve() chan error {
 			}
 		} else {
 			// Start queue without transport (dry-run mode)
-			if err := p.queue.Start(ctx, &NoOpProcessor{p.logger}); err != nil {
+			if err := p.queue.Start(ctx, &NoOpProcessor{p.logger, p.metrics}); err != nil {
 				errCh <- errors.E("sentry_transport_serve", err)
 				return
 			}
@@ -196,6 +201,9 @@ func (p *Plugin) SendEvent(event *SentryEvent) error {
 		return errors.E("sentry_transport_send", "plugin not initialized")
 	}
 
+	// Record event by type metric
+	p.metrics.IncEventsByType(event.Type)
+
 	return p.queue.Enqueue(event)
 }
 
@@ -206,6 +214,9 @@ func (p *Plugin) SendBatch(events []*SentryEvent) error {
 	}
 
 	for _, event := range events {
+		// Record event by type metric for each event
+		p.metrics.IncEventsByType(event.Type)
+		
 		if err := p.queue.Enqueue(event); err != nil {
 			return err
 		}
@@ -214,6 +225,10 @@ func (p *Plugin) SendBatch(events []*SentryEvent) error {
 	return nil
 }
 
+// MetricsCollector implements StatProvider interface for prometheus integration
+func (p *Plugin) MetricsCollector() []prometheus.Collector {
+	return []prometheus.Collector{p.metrics}
+}
 
 // cleanupRoutine performs periodic cleanup tasks
 func (p *Plugin) cleanupRoutine(ctx context.Context) {
@@ -241,7 +256,8 @@ type SentryTransporter interface {
 
 // NoOpProcessor is a no-op event processor for when no transport is configured
 type NoOpProcessor struct {
-	logger *zap.Logger
+	logger  *zap.Logger
+	metrics *metricsCollector
 }
 
 // ProcessEvent implements EventProcessor interface
@@ -250,6 +266,9 @@ func (n *NoOpProcessor) ProcessEvent(event *QueuedEvent) *SendResult {
 		zap.String("event_id", event.Event.ID),
 		zap.String("type", event.Event.Type),
 		zap.Int("payload_size", len(event.Event.Payload)))
+
+	// Record as successful in dry-run mode
+	n.metrics.IncSuccessfulEvents()
 
 	return &SendResult{
 		Success: true,
