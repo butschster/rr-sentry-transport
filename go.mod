@@ -1,4 +1,4 @@
-module github.com/your-org/roadrunner-sentry-transport
+module github.com/butschster/rr-sentry-transport
 
 go 1.22
 
