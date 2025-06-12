@@ -1,0 +1,35 @@
+# Velox configuration for building RoadRunner with Sentry Transport plugin
+
+[roadrunner]
+# RoadRunner version to use
+ref = "master"
+
+[debug]
+enabled = true
+
+[github]
+[github.token]
+token = "${RT_TOKEN}"
+
+# Official RoadRunner plugins
+[github.plugins]
+# Core plugins
+logger = { ref = "v5.0.2", owner = "roadrunner-server", repository = "logger" }
+rpc = { ref = "v5.0.2", owner = "roadrunner-server", repository = "rpc" }
+server = { ref = "v5.0.2", owner = "roadrunner-server", repository = "server" }
+
+# HTTP plugins
+http = { ref = "v5.0.2", owner = "roadrunner-server", repository = "http" }
+headers = { ref = "v5.0.2", owner = "roadrunner-server", repository = "headers" }
+static = { ref = "v5.0.1", owner = "roadrunner-server", repository = "static" }
+
+# Monitoring plugins
+status = { ref = "v5.0.2", owner = "roadrunner-server", repository = "status" }
+metrics = { ref = "v5.0.2", owner = "roadrunner-server", repository = "metrics" }
+
+# Custom Sentry Transport plugin
+sentry_transport = { ref = "main", owner = "your-org", repository = "roadrunner-sentry-transport" }
+
+[log]
+level = "info"
+mode = "production"
